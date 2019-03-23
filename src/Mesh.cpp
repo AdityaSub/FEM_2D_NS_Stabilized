@@ -96,6 +96,7 @@ void Mesh::setInitialField() {
     array<int, 3> nodeIDs = {0};
     array<array<double, 2>, 3> elemCoords = {{0}};
     PetscInt i1, new_ind_i;
+    PetscScalar guess_val;
 
     // initial guess/sets Dirichlet BCs
     for (auto &it : mesh) {
@@ -122,6 +123,9 @@ void Mesh::setInitialField() {
             } else if (fabs(elemCoords[i][0] - x_max) < 1e-5) { // right boundary: pressure = 0
                 i1 = new_ind_i + 2;
                 VecSetValues(x, 1, &i1, &zero, INSERT_VALUES);
+            }
+            else{ // for channel with obstruction - set initial velocity guess to uniform flow
+                VecSetValues(x, 1, &new_ind_i, &one, INSERT_VALUES);
             }
         }
     }
@@ -230,8 +234,9 @@ void Mesh::Solve() {
 
     SNESGetKSP(snes, &ksp);
     KSPGetPC(ksp, &pc);
-    PCSetType(pc, PCLU);
-    KSPSetTolerances(ksp, 1.e-5, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
+    PCSetFromOptions(pc);
+    //PCSetType(pc, PCLU);
+    //KSPSetTolerances(ksp, 1.e-5, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
     KSPSetFromOptions(ksp);
 
     double atol = 1e-6, rtol = 1e-12, stol = 1e-12;
@@ -303,7 +308,7 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
     GaussQuad quadObj;
     array<double, 3> gauss_pt_weights = quadObj.getQuadWts();
     Eigen::Matrix<double, 3, 2> gauss_pts = quadObj.getQuadPts();
-    double tau_supg, tau_pspg, h = 0, h_hash, z, Re_u, Re_U, u_mag, U_mag = 1.0, nu = 1.0 / mPtr->Re, v_j, v_r;
+    double tau_supg, tau_pspg, h = 0, h_hash, z, Re_u, Re_U, u_mag, U_mag = 1.0, v_j, v_r;
     array<PetscInt, 9> i_array{};
     array<array<PetscScalar, 3>, 3> A_block{};
     array<PetscInt, 3> A_block_row_ind{};
@@ -312,7 +317,7 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
 
     //mPtr->Assemble();
     MatZeroEntries(mPtr->J);
-    MatCopy(mPtr->J_const,mPtr->J,DIFFERENT_NONZERO_PATTERN);
+    MatCopy(mPtr->J_const, mPtr->J, DIFFERENT_NONZERO_PATTERN);
     VecZeroEntries(f);
 
     //VecView(x,PETSC_VIEWER_STDOUT_SELF);
@@ -1177,15 +1182,15 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
             for (size_t i_supg = 0; i_supg < 3; i_supg++)
                 h += curr_GP_vals[0] * der_values(i_supg, 0) + curr_GP_vals[1] * der_values(i_supg, 1);
 
-            h = (h < 1e-6) ? 0 : (2.0 * fabs(u_mag / h));
-            Re_u = u_mag * h / (2 * nu);
-            z = ((Re_u >= 0) && (Re_u <= 3)) ? Re_u / 3.0 : 1.0;
+            h = (h < 1e-6) ? 0 : (2.0 / fabs(h));
+            Re_u = u_mag * h * mPtr->Re / 2;
+            z = ((Re_u >= 0) && (Re_u <= 3)) ? (Re_u / 3.0) : 1.0;
             tau_supg = (u_mag < 1e-6) ? 0 : (h * z / (2 * u_mag));
 
             // PSPG calculation
-            h_hash = sqrt(it->getBasis().getDetJ() / (2 * PI));
-            Re_U = U_mag * h_hash / (2 * nu);
-            z = ((Re_U >= 0) && (Re_U <= 3)) ? Re_U / 3.0 : 1.0;
+            h_hash = sqrt(2 * it->getBasis().getDetJ() / PI);
+            Re_U = U_mag * h_hash * mPtr->Re / 2;
+            z = ((Re_U >= 0) && (Re_U <= 3)) ? (Re_U / 3.0) : 1.0;
             tau_pspg = h_hash * z / (2 * U_mag);
 
             // x-momentum

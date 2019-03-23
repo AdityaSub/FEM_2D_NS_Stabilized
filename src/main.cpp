@@ -13,6 +13,7 @@ int main(int argc, char *argv[]) {
 
     string fileName = argv[1];
     double Re = atof(argv[2]);
+
     Mesh m(fileName, Re);
     //m.getGrid()[0].printElemStiffness();
     m.setInitialField();
