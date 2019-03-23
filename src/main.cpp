@@ -16,6 +16,7 @@ int main(int argc, char *argv[]) {
     Mesh m(fileName, Re);
     //m.getGrid()[0].printElemStiffness();
     m.setInitialField();
+    m.Assemble(); // for J_const
     m.writeField("initial");
     m.Solve();
     m.writeField("solution");

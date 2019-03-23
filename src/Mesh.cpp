@@ -33,10 +33,14 @@ Mesh::Mesh(string &fileName, double &Re_in) : meshFileName(fileName), Re(Re_in) 
         it.calcElementStiffness();
 
     MatCreate(PETSC_COMM_WORLD, &J);
+    MatCreate(PETSC_COMM_WORLD, &J_const);
     //MatCreateSeqAIJ(PETSC_COMM_WORLD, (PetscInt) (3 * nodes.size()), (PetscInt) (3 * nodes.size()), PETSC_DEFAULT, NULL, &J);
     MatSetSizes(J, PETSC_DECIDE, PETSC_DECIDE, (PetscInt) (3 * nodes.size()), (PetscInt) (3 * nodes.size()));
     MatSetUp(J);
     MatZeroEntries(J);
+    MatSetSizes(J_const, PETSC_DECIDE, PETSC_DECIDE, (PetscInt) (3 * nodes.size()), (PetscInt) (3 * nodes.size()));
+    MatSetUp(J_const);
+    MatZeroEntries(J_const);
     VecCreate(PETSC_COMM_WORLD, &x);
     VecSetSizes(x, PETSC_DECIDE, (PetscInt) (3 * nodes.size()));
     VecSetFromOptions(x);
@@ -130,15 +134,17 @@ void Mesh::setInitialField() {
 // assemble global stiffness matrix
 void Mesh::Assemble() {
     // loop through elements and add up contributions (except at Dirichlet boundary nodes)
-    MatZeroEntries(J);
+    //MatZeroEntries(J);
     vector<int> nodeIDs;
     nodeIDs.resize(3);
     array<array<double, 2>, 3> elemCoords = {{0}};
     double norm_coeff;
     PetscInt new_ind_i, new_ind_j, new_nodeID_i, new_nodeID_j;
     for (auto &it : mesh) {
-        MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
-        MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
+        //MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
+        //MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
+        MatAssemblyBegin(J_const, MAT_FLUSH_ASSEMBLY);
+        MatAssemblyEnd(J_const, MAT_FLUSH_ASSEMBLY);
         nodeIDs[0] = it.getNode1().getID();
         nodeIDs[1] = it.getNode2().getID();
         nodeIDs[2] = it.getNode3().getID();
@@ -147,8 +153,8 @@ void Mesh::Assemble() {
         elemCoords[2] = it.getNode3().getCoord();
         const array<array<double, 9>, 9> elemStiffness = it.getElemStiffness();
         for (size_t i = 0; i < 9; i++) {
-            ierr = MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
-            ierr = MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
+            ierr = MatAssemblyBegin(J_const, MAT_FLUSH_ASSEMBLY);
+            ierr = MatAssemblyEnd(J_const, MAT_FLUSH_ASSEMBLY);
             new_nodeID_i = (i < 3) ? (nodeIDs[0]) : (((i >= 3) && (i < 6)) ? (nodeIDs[1]) : (
                     nodeIDs[2]));
             new_ind_i = 3 * new_nodeID_i + (PetscInt) i % 3;
@@ -186,18 +192,23 @@ void Mesh::Assemble() {
                                                                           2)) ||
                 ((fabs(sqrt(pow(elemCoords[i / 3][0] - 5, 2.0) + pow(elemCoords[i / 3][1] - 1, 2.0)) - 0.5) < 1e-5) &&
                  ((i % 3) < 2))) {
-                ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
+                //ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
+                ierr = MatSetValues(J_const, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
                 it.setElemFlag(i, false);
             } else {
-                ierr = MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
-                ierr = MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
+//                ierr = MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
+//                ierr = MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
+                ierr = MatAssemblyBegin(J_const, MAT_FLUSH_ASSEMBLY);
+                ierr = MatAssemblyEnd(J_const, MAT_FLUSH_ASSEMBLY);
                 for (size_t j = 0; j < 9; j++) {
                     //globalStiffness[nodeIDs[i]][nodeIDs[j]] += elemStiffness[i][j];
                     norm_coeff = elemStiffness[i][j] / Re;
                     new_nodeID_j = (j < 3) ? (nodeIDs[0]) : (((i >= 3) && (i < 6)) ? (nodeIDs[1]) : (
                             nodeIDs[2]));
                     new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
-                    ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_j, &norm_coeff,
+                    //ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_j, &norm_coeff,
+                    //                    ADD_VALUES);
+                    ierr = MatSetValues(J_const, 1, &new_ind_i, 1, &new_ind_j, &norm_coeff,
                                         ADD_VALUES);
                     //cout << "Ag for " << nodeIDs[i] << ", " << nodeIDs[j] << ": " << globalStiffness[nodeIDs[i]][nodeIDs[j]] << endl;
                 }
@@ -205,8 +216,10 @@ void Mesh::Assemble() {
         }
     }
     //cout << "J assembled!" << endl;
-    MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+//    MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
+//    MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(J_const, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(J_const, MAT_FINAL_ASSEMBLY);
     //MatView(J,PETSC_VIEWER_STDOUT_SELF);
 }
 
@@ -297,7 +310,9 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
     array<PetscInt, 3> A_block_col_ind{};
     array<PetscScalar, 3> res_block{};
 
-    mPtr->Assemble();
+    //mPtr->Assemble();
+    MatZeroEntries(mPtr->J);
+    MatCopy(mPtr->J_const,mPtr->J,DIFFERENT_NONZERO_PATTERN);
     VecZeroEntries(f);
 
     //VecView(x,PETSC_VIEWER_STDOUT_SELF);

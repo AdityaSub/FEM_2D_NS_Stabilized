@@ -19,7 +19,7 @@ public:
 
     // TODO: figure out a way to make the PETSc functions 'friend' to this class so the following variables can be made 'private'
     Vec x, r;
-    Mat J;
+    Mat J,J_const;
     double x_min = 0.0, y_min = 0.0, x_max = 0.0, y_max = 0.0; // mesh bounds
     double Re = 1.0;
     PetscErrorCode ierr;
