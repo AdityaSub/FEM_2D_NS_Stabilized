@@ -54,7 +54,7 @@ void Element::calcElementStiffness() {
     Eigen::Matrix<double, 3, 2> gauss_pts = quadObj.getQuadPts();
     Matrix<double, 3, 2> der_values = basis.calcBasisDer(); // constant for linear elements
 
-    // grad(w).grad(u)
+    // grad(w).grad(delta u)
     for (int i = 0; i < gauss_pts.rows(); i++) {
         elemStiffness[0][0] += (0.5) * gauss_pt_weights[i] * (pow(der_values(0, 0), 2.0) + pow(der_values(0, 1), 2.0)) *
                                basis.getDetJ();
@@ -76,7 +76,7 @@ void Element::calcElementStiffness() {
     elemStiffness[6][0] = elemStiffness[0][6];
     elemStiffness[6][3] = elemStiffness[3][6];
 
-    // grad(w).grad(v)
+    // grad(w).grad(delta v)
     elemStiffness[1][1] = elemStiffness[0][0];
     elemStiffness[1][4] = elemStiffness[0][3];
     elemStiffness[1][7] = elemStiffness[0][6];
@@ -86,6 +86,17 @@ void Element::calcElementStiffness() {
     elemStiffness[7][1] = elemStiffness[6][0];
     elemStiffness[7][4] = elemStiffness[6][3];
     elemStiffness[7][7] = elemStiffness[6][6];
+
+    // grad(q).grad(delta p)
+    /*elemStiffness[2][2] = elemStiffness[0][0];
+    elemStiffness[2][5] = elemStiffness[0][3];
+    elemStiffness[2][8] = elemStiffness[0][6];
+    elemStiffness[5][2] = elemStiffness[3][0];
+    elemStiffness[5][5] = elemStiffness[3][3];
+    elemStiffness[5][8] = elemStiffness[3][6];
+    elemStiffness[8][2] = elemStiffness[6][0];
+    elemStiffness[8][5] = elemStiffness[6][3];
+    elemStiffness[8][8] = elemStiffness[6][6];*/
 
     //cout << "K_elem computed for elem: " << elemID << endl;
 }

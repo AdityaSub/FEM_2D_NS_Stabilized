@@ -13,7 +13,6 @@ using namespace std;
 using namespace Eigen;
 
 extern PetscErrorCode FormFunction(SNES, Vec, Vec, void *);
-
 extern PetscErrorCode FormJacobian(SNES, Vec, Mat, Mat, void *);
 
 // constructor
@@ -110,23 +109,47 @@ void Mesh::setInitialField() {
         for (size_t i = 0; i < 3; i++) {
             new_ind_i = 3 * nodeIDs[i]; // global mapping
             /*lid-driven cavity*/
-            /*if (fabs(elemCoords[i][1] - y_max) < 1e-5) { // top boundary: x-velocity = 1
+            if (fabs(elemCoords[i][1] - y_max) < 1e-5) { // top boundary: x-velocity = 1
                 VecSetValues(x, 1, &new_ind_i, &one, INSERT_VALUES);
             } else if ((fabs(elemCoords[i][0] - x_max) < 1e-5) &&
                        (fabs(elemCoords[i][1] - y_min) < 1e-5)) { // bottom right corner: pressure = 1
                 i1 = new_ind_i + 2;
                 VecSetValues(x, 1, &i1, &one, INSERT_VALUES);
-            }*/
+            }
             /*channel flow*/
-            if (fabs(elemCoords[i][0] - x_min) < 1e-5) { // left boundary: x-velocity = 1
+            /*if (fabs(elemCoords[i][0] - x_min) < 1e-5) { // left boundary: x-velocity = 1
                 VecSetValues(x, 1, &new_ind_i, &one, INSERT_VALUES);
             } else if (fabs(elemCoords[i][0] - x_max) < 1e-5) { // right boundary: pressure = 0
                 i1 = new_ind_i + 2;
                 VecSetValues(x, 1, &i1, &zero, INSERT_VALUES);
-            }
-            else{ // for channel with obstruction - set initial velocity guess to uniform flow
-                VecSetValues(x, 1, &new_ind_i, &one, INSERT_VALUES);
-            }
+            } else { // for channel with obstruction - set initial velocity guess to uniform flow or zero
+                VecSetValues(x, 1, &new_ind_i, &zero, INSERT_VALUES);
+            }*/
+            /*channel with backward step*/
+            /*if (fabs(elemCoords[i][0] - x_min) < 1e-5) { // left boundary: x-velocity = parabolic (developed)
+                guess_val = 16 * (1.0 - elemCoords[i][1]) * (-0.5 + elemCoords[i][1]);
+                VecSetValues(x, 1, &new_ind_i, &guess_val, INSERT_VALUES);
+                i1 = new_ind_i + 1;
+                VecSetValues(x, 1, &i1, &zero, INSERT_VALUES);
+            } else if ((fabs(elemCoords[i][0] - x_max) < 1e-5) &&
+                       (fabs(elemCoords[i][1] - y_min) < 1e-5)) { // bottom right corner: pressure = 0
+                i1 = new_ind_i + 2;
+                VecSetValues(x, 1, &i1, &zero, INSERT_VALUES);
+            } else if (((fabs(elemCoords[i][0] - 1.0) < 1e-5) && (elemCoords[i][1] >= y_min) &&
+                        (elemCoords[i][1] <= 0.5)) ||
+                       ((fabs(elemCoords[i][1] - 0.5) < 1e-5) && (elemCoords[i][0] >= x_min) &&
+                        (elemCoords[i][0] <= 1.0))) { // the step - no-slip and no-penetration
+                i1 = new_ind_i + 1;
+                VecSetValues(x, 1, &new_ind_i, &zero, INSERT_VALUES);
+                VecSetValues(x, 1, &i1, &zero, INSERT_VALUES);
+            } else if ((elemCoords[i][1] == y_min) ||
+                       (elemCoords[i][1] == y_max)) {
+                i1 = new_ind_i + 1;
+                VecSetValues(x, 1, &new_ind_i, &zero, INSERT_VALUES);
+                VecSetValues(x, 1, &i1, &zero, INSERT_VALUES);
+            } else { // for channel with obstruction - set initial velocity guess to zero
+                VecSetValues(x, 1, &new_ind_i, &zero, INSERT_VALUES);
+            }*/
         }
     }
 
@@ -165,49 +188,22 @@ void Mesh::Assemble() {
 
             /*lid-driven cavity*/
             // left, right, bottom, top boundaries for velocities (and bottom right corner for pressure) - Dirichlet BCs
-            /*if ((((elemCoords[i / 3][0] == x_min) || (elemCoords[i / 3][0] == x_max) ||
+            if ((((elemCoords[i / 3][0] == x_min) || (elemCoords[i / 3][0] == x_max) ||
                   (elemCoords[i / 3][1] == y_min) ||
                   (elemCoords[i / 3][1] == y_max)) && ((i % 3) < 2)) || ((fabs(elemCoords[i / 3][0] - x_max) < 1e-5) &&
                                                                          (fabs(elemCoords[i / 3][1] - y_min) < 1e-5) &&
                                                                          ((i % 3) ==
                                                                           2))) {
-                ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
+                //ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
+                ierr = MatSetValues(J_const, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
+                it.setElemFlag(i, false);
             } else {
                 ierr = MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
                 ierr = MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
                 for (size_t j = 0; j < 9; j++) {
                     //globalStiffness[nodeIDs[i]][nodeIDs[j]] += elemStiffness[i][j];
                     norm_coeff = elemStiffness[i][j] / Re;
-                    new_nodeID_j = (j < 3) ? (nodeIDs[0]) : (((i >= 3) && (i < 6)) ? (nodeIDs[1]) : (
-                            nodeIDs[2]));
-                    new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
-                    ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_j, &norm_coeff,
-                                        ADD_VALUES);
-                    //cout << "Ag for " << nodeIDs[i] << ", " << nodeIDs[j] << ": " << globalStiffness[nodeIDs[i]][nodeIDs[j]] << endl;
-                }
-            }*/
-
-            /*channel flow*/
-            // left, bottom, top boundaries for velocities, cavity boundary (if applicable) (and bottom right corner for pressure) - Dirichlet BCs
-            if ((((elemCoords[i / 3][0] == x_min) ||
-                  (elemCoords[i / 3][1] == y_min) ||
-                  (elemCoords[i / 3][1] == y_max)) && ((i % 3) < 2)) || ((fabs(elemCoords[i / 3][0] - x_max) < 1e-5) &&
-                                                                         ((i % 3) ==
-                                                                          2)) ||
-                ((fabs(sqrt(pow(elemCoords[i / 3][0] - 5, 2.0) + pow(elemCoords[i / 3][1] - 1, 2.0)) - 0.5) < 1e-5) &&
-                 ((i % 3) < 2))) {
-                //ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
-                ierr = MatSetValues(J_const, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
-                it.setElemFlag(i, false);
-            } else {
-//                ierr = MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
-//                ierr = MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
-                ierr = MatAssemblyBegin(J_const, MAT_FLUSH_ASSEMBLY);
-                ierr = MatAssemblyEnd(J_const, MAT_FLUSH_ASSEMBLY);
-                for (size_t j = 0; j < 9; j++) {
-                    //globalStiffness[nodeIDs[i]][nodeIDs[j]] += elemStiffness[i][j];
-                    norm_coeff = elemStiffness[i][j] / Re;
-                    new_nodeID_j = (j < 3) ? (nodeIDs[0]) : (((i >= 3) && (i < 6)) ? (nodeIDs[1]) : (
+                    new_nodeID_j = (j < 3) ? (nodeIDs[0]) : (((j >= 3) && (j < 6)) ? (nodeIDs[1]) : (
                             nodeIDs[2]));
                     new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
                     //ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_j, &norm_coeff,
@@ -217,6 +213,49 @@ void Mesh::Assemble() {
                     //cout << "Ag for " << nodeIDs[i] << ", " << nodeIDs[j] << ": " << globalStiffness[nodeIDs[i]][nodeIDs[j]] << endl;
                 }
             }
+
+            /*channel flow*/
+            // left, bottom, top boundaries for velocities, cavity boundary (if applicable) (and bottom right corner for pressure) - Dirichlet BCs
+//            if ((((elemCoords[i / 3][0] == x_min) ||
+//                  (elemCoords[i / 3][1] == y_min) ||
+//                  (elemCoords[i / 3][1] == y_max)) && ((i % 3) < 2)) || ((fabs(elemCoords[i / 3][0] - x_max) < 1e-5) &&
+//                                                                         ((i % 3) ==
+//                                                                          2)) ||
+//                ((fabs(sqrt(pow(elemCoords[i / 3][0] - 5, 2.0) + pow(elemCoords[i / 3][1] - 1, 2.0)) - 0.5) < 1e-5) &&
+//                 ((i % 3) < 2))) {
+//
+//                /*channel with backward step*/
+//                /*if ((((elemCoords[i / 3][0] == x_min) ||
+//                      (elemCoords[i / 3][1] == y_min) ||
+//                      (elemCoords[i / 3][1] == y_max)) && ((i % 3) < 2)) ||
+//                    (((fabs(elemCoords[i / 3][0] - 1.0) < 1e-5) && (elemCoords[i / 3][1] >= y_min) &&
+//                      (elemCoords[i / 3][1] <= 0.5)) && ((i % 3) < 2)) ||
+//                    (((fabs(elemCoords[i / 3][1] - 0.5) < 1e-5) && (elemCoords[i / 3][0] >= x_min) &&
+//                      (elemCoords[i / 3][0] <= 1.0)) && ((i % 3) < 2)) || ((fabs(elemCoords[i / 3][0] - x_max) < 1e-5) &&
+//                                                                           (fabs(elemCoords[i / 3][1] - y_min) < 1e-5) &&
+//                                                                           ((i % 3) ==
+//                                                                            2))) {*/
+//                //ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
+//                ierr = MatSetValues(J_const, 1, &new_ind_i, 1, &new_ind_i, &one, INSERT_VALUES);
+//                it.setElemFlag(i, false);
+//            } else {
+////                ierr = MatAssemblyBegin(J, MAT_FLUSH_ASSEMBLY);
+////                ierr = MatAssemblyEnd(J, MAT_FLUSH_ASSEMBLY);
+//                ierr = MatAssemblyBegin(J_const, MAT_FLUSH_ASSEMBLY);
+//                ierr = MatAssemblyEnd(J_const, MAT_FLUSH_ASSEMBLY);
+//                for (size_t j = 0; j < 9; j++) {
+//                    //globalStiffness[nodeIDs[i]][nodeIDs[j]] += elemStiffness[i][j];
+//                    norm_coeff = elemStiffness[i][j] / Re;
+//                    new_nodeID_j = (j < 3) ? (nodeIDs[0]) : (((j >= 3) && (j < 6)) ? (nodeIDs[1]) : (
+//                            nodeIDs[2]));
+//                    new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
+//                    //ierr = MatSetValues(J, 1, &new_ind_i, 1, &new_ind_j, &norm_coeff,
+//                    //                    ADD_VALUES);
+//                    ierr = MatSetValues(J_const, 1, &new_ind_i, 1, &new_ind_j, &norm_coeff,
+//                                        ADD_VALUES);
+//                    //cout << "Ag for " << nodeIDs[i] << ", " << nodeIDs[j] << ": " << globalStiffness[nodeIDs[i]][nodeIDs[j]] << endl;
+//                }
+//            }
         }
     }
     //cout << "J assembled!" << endl;
@@ -308,7 +347,7 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
     GaussQuad quadObj;
     array<double, 3> gauss_pt_weights = quadObj.getQuadWts();
     Eigen::Matrix<double, 3, 2> gauss_pts = quadObj.getQuadPts();
-    double tau_supg, tau_pspg, h = 0, h_hash, z, Re_u, Re_U, u_mag, U_mag = 1.0, v_j, v_r;
+    double tau_supg, tau_pspg, h = 0, h_hash, z, Re_u, Re_U, u_mag, U_mag = mPtr->one, v_j, v_r;
     array<PetscInt, 9> i_array{};
     array<array<PetscScalar, 3>, 3> A_block{};
     array<PetscInt, 3> A_block_row_ind{};
@@ -1163,6 +1202,12 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
 //            }
 //        }
 
+        // PSPG calculation
+        h_hash = sqrt(2 * it->getBasis().getDetJ() / PI);
+        Re_U = U_mag * h_hash * mPtr->Re / 2;
+        z = ((Re_U >= 0) && (Re_U <= 3)) ? (Re_U / 3.0) : 1.0;
+        tau_pspg = h_hash * z / (2 * U_mag);
+
         //// Jacobian and residual ////
         for (size_t k = 0; k < gauss_pts.rows(); k++) {
             // basis values at current GP
@@ -1182,16 +1227,10 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
             for (size_t i_supg = 0; i_supg < 3; i_supg++)
                 h += curr_GP_vals[0] * der_values(i_supg, 0) + curr_GP_vals[1] * der_values(i_supg, 1);
 
-            h = (h < 1e-6) ? 0 : (2.0 / fabs(h));
+            h = (h < 1e-6) ? 0 : (2.0 * u_mag/ fabs(h));
             Re_u = u_mag * h * mPtr->Re / 2;
             z = ((Re_u >= 0) && (Re_u <= 3)) ? (Re_u / 3.0) : 1.0;
             tau_supg = (u_mag < 1e-6) ? 0 : (h * z / (2 * u_mag));
-
-            // PSPG calculation
-            h_hash = sqrt(2 * it->getBasis().getDetJ() / PI);
-            Re_U = U_mag * h_hash * mPtr->Re / 2;
-            z = ((Re_U >= 0) && (Re_U <= 3)) ? (Re_U / 3.0) : 1.0;
-            tau_pspg = h_hash * z / (2 * U_mag);
 
             // x-momentum
             A_block = {};
@@ -1307,8 +1346,8 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
                         A_block_col_ind[j / 3] = new_ind_j;
 
-                        A_block[i / 3][j / 3] -=
-                                0.5 * gauss_pt_weights[k] * (der_values(basis_ind, 0) * basis_values[j / 3]) *
+                        A_block[i / 3][j / 3] +=
+                                0.5 * gauss_pt_weights[k] * (-der_values(basis_ind, 0) * basis_values[j / 3]) *
                                 it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
                                                  (curr_GP_vals[0] * der_values(basis_ind, 0) +
@@ -1453,8 +1492,8 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
                         A_block_col_ind[j / 3] = new_ind_j;
 
-                        A_block[i / 3][j / 3] -=
-                                0.5 * gauss_pt_weights[k] * (der_values(basis_ind, 1) * basis_values[j / 3]) *
+                        A_block[i / 3][j / 3] +=
+                                0.5 * gauss_pt_weights[k] * (-der_values(basis_ind, 1) * basis_values[j / 3]) *
                                 it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
                                                  (curr_GP_vals[0] * der_values(basis_ind, 0) +
