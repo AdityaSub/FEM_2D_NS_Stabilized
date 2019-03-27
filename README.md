@@ -10,4 +10,4 @@
 
 ###Mesh format###: first line: <num. nodes> <num. dimensions>, next <num. nodes> lines: <node x-coord.> <node y-coord.>, next line: <num. elements> <num. nodes/element>, next <num. elements> lines: connectivities (WARNING: although <num. dimensions> and <num. nodes/element> have been specified in the mesh as input, these are NOT used by the code to generalize the number of dimensions/basis functions and element-type - the code currently only supports triangular elements, but extension to other elements is possible: please contact me for assistance with the same)
   
-![alt text](https://github.com/AdityaSub/FEM_2D_NS_Stabilized/blob/master/sample_solutions/NS_output.png)
+![alt text](https://github.com/AdityaSub/FEM_2D_NS_Stabilized/blob/master/sample_solutions/NS_output.png | width=100)
