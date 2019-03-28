@@ -2,7 +2,6 @@
 #include<iomanip>
 #include<vector>
 #include<fstream>
-#include<Eigen/Dense>
 //#include<cmath>
 #include "Mesh.h"
 #include "GaussQuad.h"
@@ -10,7 +9,6 @@
 #define PI 3.14159265358979323846
 
 using namespace std;
-using namespace Eigen;
 
 extern PetscErrorCode FormFunction(SNES, Vec, Vec, void *);
 extern PetscErrorCode FormJacobian(SNES, Vec, Mat, Mat, void *);
@@ -336,17 +334,17 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
     PetscScalar v, v1, v2, v3;
     array<array<double, 9>, 9> temp_vals = {{0}}; // temporary array for Jacobian values
     array<double, 3> basis_values{};
-    Matrix<double, 3, 2> der_values;
+    array<array<double,2>, 3> der_values{};
     array<array<double, 2>, 3> elemCoords = {{0}};
     PetscInt new_ind_i, new_ind_j, i1, i2, i3, i4, i5, i6, i7, i8, i9, new_nodeID_i, new_nodeID_j, basis_ind;
     array<double, 9> curr_dof_vals = {
             0}; // previous iteration nodal values for (u,v,p) for current element being assembled
     array<double, 3> curr_GP_vals = {0}; // current gauss point values for DOFs for current element assembly
-    Matrix<double, 3, 2> curr_GP_val_ders; // current gauss point derivative values for DOFs for current element assembly
+    array<array<double,2>, 3> curr_GP_val_ders{}; // current gauss point derivative values for DOFs for current element assembly
     array<int, 3> curr_nodeIDs = {0}; // node IDs of current element being assembled
     GaussQuad quadObj;
     array<double, 3> gauss_pt_weights = quadObj.getQuadWts();
-    Eigen::Matrix<double, 3, 2> gauss_pts = quadObj.getQuadPts();
+    array<array<double,2>, 3> gauss_pts = quadObj.getQuadPts();
     double tau_supg, tau_pspg, h = 0, h_hash, z, Re_u, Re_U, u_mag, U_mag = mPtr->one, v_j, v_r;
     array<PetscInt, 9> i_array{};
     array<array<PetscScalar, 3>, 3> A_block{};
@@ -403,22 +401,22 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
         der_values = it->getBasis().calcBasisDer(); // TODO: should take in Gauss point for higher-order basis functions, but here it is outside loop because of linear basis - WARNING!!!!
 
         // (u_x,u_y) at GP // TODO: as noted above, the following derivatives at Gauss points should feature inside the loop, rather than outside as done here, which is only for constant derivatives (linear triangles)
-        curr_GP_val_ders(0, 0) = curr_dof_vals[0] * der_values(0, 0) + curr_dof_vals[3] * der_values(1, 0) +
-                                 curr_dof_vals[6] * der_values(2, 0);
-        curr_GP_val_ders(0, 1) = curr_dof_vals[0] * der_values(0, 1) + curr_dof_vals[3] * der_values(1, 1) +
-                                 curr_dof_vals[6] * der_values(2, 1);
+        curr_GP_val_ders[0][0] = curr_dof_vals[0] * der_values[0][0] + curr_dof_vals[3] * der_values[1][0] +
+                                 curr_dof_vals[6] * der_values[2][0];
+        curr_GP_val_ders[0][1] = curr_dof_vals[0] * der_values[0][1] + curr_dof_vals[3] * der_values[1][1] +
+                                 curr_dof_vals[6] * der_values[2][1];
 
         // (v_x,v_y) at GP
-        curr_GP_val_ders(1, 0) = curr_dof_vals[1] * der_values(0, 0) + curr_dof_vals[4] * der_values(1, 0) +
-                                 curr_dof_vals[7] * der_values(2, 0);
-        curr_GP_val_ders(1, 1) = curr_dof_vals[1] * der_values(0, 1) + curr_dof_vals[4] * der_values(1, 1) +
-                                 curr_dof_vals[7] * der_values(2, 1);
+        curr_GP_val_ders[1][0] = curr_dof_vals[1] * der_values[0][0] + curr_dof_vals[4] * der_values[1][0] +
+                                 curr_dof_vals[7] * der_values[2][0];
+        curr_GP_val_ders[1][1] = curr_dof_vals[1] * der_values[0][1] + curr_dof_vals[4] * der_values[1][1] +
+                                 curr_dof_vals[7] * der_values[2][1];
 
         // (p_x,p_y) at GP
-        curr_GP_val_ders(2, 0) = curr_dof_vals[2] * der_values(0, 0) + curr_dof_vals[5] * der_values(1, 0) +
-                                 curr_dof_vals[8] * der_values(2, 0);
-        curr_GP_val_ders(2, 1) = curr_dof_vals[2] * der_values(0, 1) + curr_dof_vals[5] * der_values(1, 1) +
-                                 curr_dof_vals[8] * der_values(2, 1);
+        curr_GP_val_ders[2][0] = curr_dof_vals[2] * der_values[0][0] + curr_dof_vals[5] * der_values[1][0] +
+                                 curr_dof_vals[8] * der_values[2][0];
+        curr_GP_val_ders[2][1] = curr_dof_vals[2] * der_values[0][1] + curr_dof_vals[5] * der_values[1][1] +
+                                 curr_dof_vals[8] * der_values[2][1];
 
         // ###### Jacobian matrix ######
 //        for (size_t i = 0; i < 9; i++) { // loop over ndofs * nodes ('i'th equation/row for an element)
@@ -1209,9 +1207,9 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
         tau_pspg = h_hash * z / (2 * U_mag);
 
         //// Jacobian and residual ////
-        for (size_t k = 0; k < gauss_pts.rows(); k++) {
+        for (size_t k = 0; k < gauss_pts.size(); k++) {
             // basis values at current GP
-            basis_values = it->getBasis().calcBasis(gauss_pts(k, 0), gauss_pts(k, 1));
+            basis_values = it->getBasis().calcBasis(gauss_pts[k][0], gauss_pts[k][1]);
 
             // (u,v,p) at GP
             curr_GP_vals[0] = curr_dof_vals[0] * basis_values[0] + curr_dof_vals[3] * basis_values[1] +
@@ -1225,7 +1223,7 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
             u_mag = sqrt(pow(curr_GP_vals[0], 2.0) + pow(curr_GP_vals[1], 2.0));
             h = 0.0;
             for (size_t i_supg = 0; i_supg < 3; i_supg++)
-                h += curr_GP_vals[0] * der_values(i_supg, 0) + curr_GP_vals[1] * der_values(i_supg, 1);
+                h += curr_GP_vals[0] * der_values[i_supg][0] + curr_GP_vals[1] * der_values[i_supg][1];
 
             h = (h < 1e-6) ? 0 : (2.0 * u_mag/ fabs(h));
             Re_u = u_mag * h * mPtr->Re / 2;
@@ -1254,26 +1252,26 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
 
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * (basis_values[basis_ind] *
                                                                               (curr_GP_vals[0] *
-                                                                               der_values(j / 3, 0) +
+                                                                               der_values[j / 3][0] +
                                                                                curr_GP_vals[1] *
-                                                                               der_values(j / 3, 1) +
+                                                                               der_values[j / 3][1] +
                                                                                basis_values[j / 3] *
-                                                                               curr_GP_val_ders(0, 0))) *
+                                                                               curr_GP_val_ders[0][0])) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (der_values(basis_ind, 0) * basis_values[j / 3] *
-                                                  (curr_GP_vals[0] * curr_GP_val_ders(0, 0) +
-                                                   curr_GP_vals[1] * curr_GP_val_ders(0, 1)) +
-                                                  (curr_GP_vals[0] * der_values(basis_ind, 0) +
-                                                   curr_GP_vals[1] * der_values(basis_ind, 1)) *
-                                                  (curr_GP_vals[0] * der_values(j / 3, 0) +
-                                                   curr_GP_vals[1] * der_values(j / 3, 1) +
+                                                 (der_values[basis_ind][0] * basis_values[j / 3] *
+                                                  (curr_GP_vals[0] * curr_GP_val_ders[0][0] +
+                                                   curr_GP_vals[1] * curr_GP_val_ders[0][1]) +
+                                                  (curr_GP_vals[0] * der_values[basis_ind][0] +
+                                                   curr_GP_vals[1] * der_values[basis_ind][1]) *
+                                                  (curr_GP_vals[0] * der_values[j / 3][0] +
+                                                   curr_GP_vals[1] * der_values[j / 3][1] +
                                                    basis_values[j / 3] *
-                                                   curr_GP_val_ders(0, 0))) *
+                                                   curr_GP_val_ders[0][0])) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (der_values(basis_ind, 0) * basis_values[j / 3] *
-                                                  curr_GP_val_ders(2, 0)) *
+                                                 (der_values[basis_ind][0] * basis_values[j / 3] *
+                                                  curr_GP_val_ders[2][0]) *
                                                  it->getBasis().getDetJ();
                     }
                 }
@@ -1301,25 +1299,25 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
 
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] *
                                                  (basis_values[basis_ind] * basis_values[j / 3] *
-                                                  curr_GP_val_ders(0, 1)) *
+                                                  curr_GP_val_ders[0][1]) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (basis_values[j / 3] * (der_values(basis_ind, 1) *
+                                                 (basis_values[j / 3] * (der_values[basis_ind][1] *
                                                                          (curr_GP_vals[0] *
-                                                                          curr_GP_val_ders(0,
-                                                                                           0) +
+                                                                          curr_GP_val_ders[0]
+                                                                                           [0] +
                                                                           curr_GP_vals[1] *
-                                                                          curr_GP_val_ders(0,
-                                                                                           1)) +
-                                                                         curr_GP_val_ders(0, 1) *
+                                                                          curr_GP_val_ders[0]
+                                                                                           [1]) +
+                                                                         curr_GP_val_ders[0][1] *
                                                                          (curr_GP_vals[0] *
-                                                                          der_values(basis_ind, 0) +
+                                                                          der_values[basis_ind][0] +
                                                                           curr_GP_vals[1] *
-                                                                          der_values(basis_ind, 1)))) *
+                                                                          der_values[basis_ind][1]))) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_pspg *
-                                                 (der_values(basis_ind, 1) * basis_values[j / 3] *
-                                                  curr_GP_val_ders(2, 0)) *
+                                                 (der_values[basis_ind][1] * basis_values[j / 3] *
+                                                  curr_GP_val_ders[2][0]) *
                                                  it->getBasis().getDetJ();
                     }
                 }
@@ -1347,32 +1345,32 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         A_block_col_ind[j / 3] = new_ind_j;
 
                         A_block[i / 3][j / 3] +=
-                                0.5 * gauss_pt_weights[k] * (-der_values(basis_ind, 0) * basis_values[j / 3]) *
+                                0.5 * gauss_pt_weights[k] * (-der_values[basis_ind][0] * basis_values[j / 3]) *
                                 it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (curr_GP_vals[0] * der_values(basis_ind, 0) +
-                                                  curr_GP_vals[1] * der_values(basis_ind, 1)) *
-                                                 (der_values(j / 3, 0)) * it->getBasis().getDetJ();
+                                                 (curr_GP_vals[0] * der_values[basis_ind][0] +
+                                                  curr_GP_vals[1] * der_values[basis_ind][1]) *
+                                                 (der_values[j / 3][0]) * it->getBasis().getDetJ();
                     }
                 }
 
                 if (it->getElemFlag(i)) {
                     res_block[i / 3] += 0.5 * gauss_pt_weights[k] *
-                                        ((basis_values[basis_ind] * (curr_GP_vals[0] * curr_GP_val_ders(0, 0) +
+                                        ((basis_values[basis_ind] * (curr_GP_vals[0] * curr_GP_val_ders[0][0] +
                                                                      curr_GP_vals[1] *
-                                                                     curr_GP_val_ders(0, 1))) +
-                                         (tau_supg * (curr_GP_vals[0] * curr_GP_val_ders(0, 0) +
+                                                                     curr_GP_val_ders[0][1])) +
+                                         (tau_supg * (curr_GP_vals[0] * curr_GP_val_ders[0][0] +
                                                       curr_GP_vals[1] *
-                                                      curr_GP_val_ders(0, 1)) *
-                                          (curr_GP_vals[0] * der_values(basis_ind, 0) +
+                                                      curr_GP_val_ders[0][1]) *
+                                          (curr_GP_vals[0] * der_values[basis_ind][0] +
                                            curr_GP_vals[1] *
-                                           der_values(basis_ind, 1))) - (curr_GP_vals[2] * der_values(basis_ind, 0)) +
-                                         (tau_supg * (curr_GP_vals[0] * der_values(basis_ind, 0) +
+                                           der_values[basis_ind][1])) - (curr_GP_vals[2] * der_values[basis_ind][0]) +
+                                         (tau_supg * (curr_GP_vals[0] * der_values[basis_ind][0] +
                                                       curr_GP_vals[1] *
-                                                      der_values(basis_ind, 1)) * curr_GP_val_ders(2, 0)) +
+                                                      der_values[basis_ind][1]) * curr_GP_val_ders[2][0]) +
                                          ((1.0 / mPtr->Re) *
-                                          (der_values(basis_ind, 0) * curr_GP_val_ders(0, 0) +
-                                           der_values(basis_ind, 1) * curr_GP_val_ders(0, 1)))) *
+                                          (der_values[basis_ind][0] * curr_GP_val_ders[0][0] +
+                                           der_values[basis_ind][1] * curr_GP_val_ders[0][1]))) *
                                         it->getBasis().getDetJ();
                 }
             }
@@ -1401,26 +1399,26 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
 
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] *
                                                  (basis_values[basis_ind] * basis_values[j / 3] *
-                                                  curr_GP_val_ders(1, 0)) *
+                                                  curr_GP_val_ders[1][0]) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (basis_values[j / 3] * (der_values(basis_ind, 0) *
+                                                 (basis_values[j / 3] * (der_values[basis_ind][0] *
                                                                          (curr_GP_vals[0] *
-                                                                          curr_GP_val_ders(1,
-                                                                                           0) +
+                                                                          curr_GP_val_ders[1]
+                                                                                           [0] +
                                                                           curr_GP_vals[1] *
-                                                                          curr_GP_val_ders(1,
-                                                                                           1)) +
-                                                                         curr_GP_val_ders(1, 0) *
+                                                                          curr_GP_val_ders[1]
+                                                                                           [1]) +
+                                                                         curr_GP_val_ders[1][0] *
                                                                          (curr_GP_vals[0] *
-                                                                          der_values(basis_ind, 0) +
+                                                                          der_values[basis_ind][0] +
                                                                           curr_GP_vals[1] *
-                                                                          der_values(basis_ind,
-                                                                                     1)))) *
+                                                                          der_values[basis_ind]
+                                                                                     [1]))) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_pspg *
-                                                 (der_values(basis_ind, 0) * basis_values[j / 3] *
-                                                  curr_GP_val_ders(2, 1)) *
+                                                 (der_values[basis_ind][0] * basis_values[j / 3] *
+                                                  curr_GP_val_ders[2][1]) *
                                                  it->getBasis().getDetJ();
                     }
                 }
@@ -1447,25 +1445,25 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         A_block_col_ind[j / 3] = new_ind_j;
 
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * (basis_values[basis_ind] *
-                                                                              (curr_GP_vals[0] * der_values(j / 3, 0) +
-                                                                               curr_GP_vals[1] * der_values(j / 3, 1) +
+                                                                              (curr_GP_vals[0] * der_values[j / 3][0] +
+                                                                               curr_GP_vals[1] * der_values[j / 3][1] +
                                                                                basis_values[j / 3] *
-                                                                               curr_GP_val_ders(1, 1))) *
+                                                                               curr_GP_val_ders[1][1])) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (der_values(basis_ind, 1) * basis_values[j / 3] *
-                                                  (curr_GP_vals[0] * curr_GP_val_ders(1, 0) +
-                                                   curr_GP_vals[1] * curr_GP_val_ders(1, 1)) +
-                                                  (curr_GP_vals[0] * der_values(basis_ind, 0) +
-                                                   curr_GP_vals[1] * der_values(basis_ind, 1)) *
-                                                  (curr_GP_vals[0] * der_values(j / 3, 0) +
-                                                   curr_GP_vals[1] * der_values(j / 3, 1) +
+                                                 (der_values[basis_ind][1] * basis_values[j / 3] *
+                                                  (curr_GP_vals[0] * curr_GP_val_ders[1][0] +
+                                                   curr_GP_vals[1] * curr_GP_val_ders[1][1]) +
+                                                  (curr_GP_vals[0] * der_values[basis_ind][0] +
+                                                   curr_GP_vals[1] * der_values[basis_ind][1]) *
+                                                  (curr_GP_vals[0] * der_values[j / 3][0] +
+                                                   curr_GP_vals[1] * der_values[j / 3][1] +
                                                    basis_values[j / 3] *
-                                                   curr_GP_val_ders(1, 1))) *
+                                                   curr_GP_val_ders[1][1])) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (der_values(basis_ind, 1) * basis_values[j / 3] *
-                                                  curr_GP_val_ders(2, 1)) *
+                                                 (der_values[basis_ind][1] * basis_values[j / 3] *
+                                                  curr_GP_val_ders[2][1]) *
                                                  it->getBasis().getDetJ();
                     }
                 }
@@ -1493,32 +1491,32 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         A_block_col_ind[j / 3] = new_ind_j;
 
                         A_block[i / 3][j / 3] +=
-                                0.5 * gauss_pt_weights[k] * (-der_values(basis_ind, 1) * basis_values[j / 3]) *
+                                0.5 * gauss_pt_weights[k] * (-der_values[basis_ind][1] * basis_values[j / 3]) *
                                 it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_supg *
-                                                 (curr_GP_vals[0] * der_values(basis_ind, 0) +
-                                                  curr_GP_vals[1] * der_values(basis_ind, 1)) *
-                                                 (der_values(j / 3, 1)) * it->getBasis().getDetJ();
+                                                 (curr_GP_vals[0] * der_values[basis_ind][0] +
+                                                  curr_GP_vals[1] * der_values[basis_ind][1]) *
+                                                 (der_values[j / 3][1]) * it->getBasis().getDetJ();
                     }
                 }
 
                 if (it->getElemFlag(i)) {
                     res_block[i / 3] += 0.5 * gauss_pt_weights[k] *
-                                        ((basis_values[basis_ind] * (curr_GP_vals[0] * curr_GP_val_ders(1, 0) +
+                                        ((basis_values[basis_ind] * (curr_GP_vals[0] * curr_GP_val_ders[1][0] +
                                                                      curr_GP_vals[1] *
-                                                                     curr_GP_val_ders(1, 1))) +
-                                         (tau_supg * (curr_GP_vals[0] * curr_GP_val_ders(1, 0) +
+                                                                     curr_GP_val_ders[1][1])) +
+                                         (tau_supg * (curr_GP_vals[0] * curr_GP_val_ders[1][0] +
                                                       curr_GP_vals[1] *
-                                                      curr_GP_val_ders(1, 1)) *
-                                          (curr_GP_vals[0] * der_values(basis_ind, 0) +
+                                                      curr_GP_val_ders[1][1]) *
+                                          (curr_GP_vals[0] * der_values[basis_ind][0] +
                                            curr_GP_vals[1] *
-                                           der_values(basis_ind, 1))) - (curr_GP_vals[2] * der_values(basis_ind, 1)) +
-                                         (tau_supg * (curr_GP_vals[0] * der_values(basis_ind, 0) +
+                                           der_values[basis_ind][1])) - (curr_GP_vals[2] * der_values[basis_ind][1]) +
+                                         (tau_supg * (curr_GP_vals[0] * der_values[basis_ind][0] +
                                                       curr_GP_vals[1] *
-                                                      der_values(basis_ind, 1)) * curr_GP_val_ders(2, 1)) +
+                                                      der_values[basis_ind][1]) * curr_GP_val_ders[2][1]) +
                                          ((1.0 / mPtr->Re) *
-                                          (der_values(basis_ind, 0) * curr_GP_val_ders(1, 0) +
-                                           der_values(basis_ind, 1) * curr_GP_val_ders(1, 1)))) *
+                                          (der_values[basis_ind][0] * curr_GP_val_ders[1][0] +
+                                           der_values[basis_ind][1] * curr_GP_val_ders[1][1]))) *
                                         it->getBasis().getDetJ();
                 }
             }
@@ -1545,19 +1543,19 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
                         A_block_col_ind[j / 3] = new_ind_j;
 
-                        A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_pspg * (der_values(basis_ind, 0) *
+                        A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_pspg * (der_values[basis_ind][0] *
                                                                                          (basis_values[j / 3] *
-                                                                                          curr_GP_val_ders(0, 0) +
+                                                                                          curr_GP_val_ders[0][0] +
                                                                                           curr_GP_vals[0] *
-                                                                                          der_values(j / 3, 0) +
+                                                                                          der_values[j / 3][0] +
                                                                                           curr_GP_vals[1] *
-                                                                                          der_values(j / 3, 1)) +
-                                                                                         der_values(basis_ind, 1) *
+                                                                                          der_values[j / 3][1]) +
+                                                                                         der_values[basis_ind][1] *
                                                                                          basis_values[j / 3] *
-                                                                                         curr_GP_val_ders(1, 0)) *
+                                                                                         curr_GP_val_ders[1][0]) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] +=
-                                0.5 * gauss_pt_weights[k] * (basis_values[basis_ind] * der_values(j / 3, 0)) *
+                                0.5 * gauss_pt_weights[k] * (basis_values[basis_ind] * der_values[j / 3][0]) *
                                 it->getBasis().getDetJ();
                     }
                 }
@@ -1583,19 +1581,19 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         new_ind_j = 3 * new_nodeID_j + (PetscInt) j % 3;
                         A_block_col_ind[j / 3] = new_ind_j;
 
-                        A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_pspg * (der_values(basis_ind, 1) *
+                        A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_pspg * (der_values[basis_ind][1] *
                                                                                          (basis_values[j / 3] *
-                                                                                          curr_GP_val_ders(1, 1) +
+                                                                                          curr_GP_val_ders[1][1] +
                                                                                           curr_GP_vals[0] *
-                                                                                          der_values(j / 3, 0) +
+                                                                                          der_values[j / 3][0] +
                                                                                           curr_GP_vals[1] *
-                                                                                          der_values(j / 3, 1)) +
-                                                                                         der_values(basis_ind, 0) *
+                                                                                          der_values[j / 3][1]) +
+                                                                                         der_values[basis_ind][0] *
                                                                                          basis_values[j / 3] *
-                                                                                         curr_GP_val_ders(0, 1)) *
+                                                                                         curr_GP_val_ders[0][1]) *
                                                  it->getBasis().getDetJ();
                         A_block[i / 3][j / 3] +=
-                                0.5 * gauss_pt_weights[k] * (basis_values[basis_ind] * der_values(j / 3, 1)) *
+                                0.5 * gauss_pt_weights[k] * (basis_values[basis_ind] * der_values[j / 3][1]) *
                                 it->getBasis().getDetJ();
                     }
                 }
@@ -1623,27 +1621,27 @@ PetscErrorCode FormFunction(SNES snes, Vec x, Vec f, void *meshPtr) {
                         A_block_col_ind[j / 3] = new_ind_j;
 
                         A_block[i / 3][j / 3] += 0.5 * gauss_pt_weights[k] * tau_pspg *
-                                                 (der_values(basis_ind, 0) * der_values(j / 3, 0) +
-                                                  der_values(basis_ind, 1) * der_values(j / 3, 1)) *
+                                                 (der_values[basis_ind][0] * der_values[j / 3][0] +
+                                                  der_values[basis_ind][1] * der_values[j / 3][1]) *
                                                  it->getBasis().getDetJ();
                     }
                 }
 
                 if (it->getElemFlag(i)) {
                     res_block[i / 3] += 0.5 * gauss_pt_weights[k] * (tau_pspg *
-                                                                     ((der_values(basis_ind, 0) *
-                                                                       (curr_GP_vals[0] * curr_GP_val_ders(0, 0) +
+                                                                     ((der_values[basis_ind][0] *
+                                                                       (curr_GP_vals[0] * curr_GP_val_ders[0][0] +
                                                                         curr_GP_vals[1] *
-                                                                        curr_GP_val_ders(0, 1) +
-                                                                        curr_GP_val_ders(2, 0))) +
-                                                                      (der_values(basis_ind, 1) *
-                                                                       (curr_GP_vals[0] * curr_GP_val_ders(1, 0) +
+                                                                        curr_GP_val_ders[0][1] +
+                                                                        curr_GP_val_ders[2][0])) +
+                                                                      (der_values[basis_ind][1] *
+                                                                       (curr_GP_vals[0] * curr_GP_val_ders[1][0] +
                                                                         curr_GP_vals[1] *
-                                                                        curr_GP_val_ders(1, 1) +
-                                                                        curr_GP_val_ders(2, 1)))) +
+                                                                        curr_GP_val_ders[1][1] +
+                                                                        curr_GP_val_ders[2][1]))) +
                                                                      basis_values[basis_ind] *
-                                                                     (curr_GP_val_ders(0, 0) +
-                                                                      curr_GP_val_ders(1, 1))) *
+                                                                     (curr_GP_val_ders[0][0] +
+                                                                      curr_GP_val_ders[1][1])) *
                                         it->getBasis().getDetJ();
                 }
             }

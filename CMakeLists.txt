@@ -11,10 +11,8 @@ set(CMAKE_CXX_FLAGS "-O3 -std=c++11")
 
 find_package(PETSc 3.6 COMPONENTS C REQUIRED)
 
-find_package(Eigen3 COMPONENTS C REQUIRED NO_MODULE)
-
 add_executable(FEM_NS ${SOURCES} include/GaussQuad.h)
 
-target_link_libraries(FEM_NS ${PETSC_LIBRARIES} Eigen3::Eigen)
+target_link_libraries(FEM_NS ${PETSC_LIBRARIES})
 
 

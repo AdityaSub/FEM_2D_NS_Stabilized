@@ -4,7 +4,7 @@
 
 class Node {
 public:
-    Node(const int = 0, const double = 0.0, const double = 0.0); // constructor
+    explicit Node(int = 0, double = 0.0, double = 0.0); // constructor
     Node(const Node &); // copy constructor
     const std::array<double, 2> &getCoord() const; // return coordinates of current node
     const int &getID() const; // return node ID of current node
