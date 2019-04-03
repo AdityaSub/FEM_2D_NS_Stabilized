@@ -1,12 +1,12 @@
 // main.cpp
-// Solve 2D Navier-Stokes equations (lid-driven cavity problem)
+// Solve 2D Navier-Stokes equations (steady-state)
 
 #include<iostream>
 #include "Mesh.h"
 
 using namespace std;
 
-static char help[] = "Solves 2D Poisson's equation with KSP.\n\n";
+static char help[] = "Solves 2D steady-state Navier Stokes equations with SNES.\n\n";
 
 int main(int argc, char *argv[]) {
     PetscInitialize(&argc, &argv, (char *) 0, help);
